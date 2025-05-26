@@ -1,7 +1,7 @@
 import sys
 import os
 from PySide6.QtWidgets import QApplication
-from app.topic_ui import TopicUI
+from app.ui.topic_ui import TopicUI
 
 def main():
     # 确保data目录存在

@@ -5,7 +5,7 @@ from app.book_scraper import FQBookScraper, QidianBookScraper
 from app.board import generate_board
 from app.image import ImageProcessor
 from app.audio import AudioGenerator
-from app.topic import TopicGenerator
+from app.core.topic import TopicGenerator
 from app.tts import TTSGenerator
 from app.video import VideoCreator
 from app.video_end import save_output_video

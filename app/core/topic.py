@@ -4,66 +4,35 @@ import os
 import random
 import time
 from dotenv import load_dotenv
-from moviepy import AudioClip, AudioFileClip, ColorClip, ImageClip, CompositeVideoClip, TextClip, concatenate_audioclips, concatenate_videoclips,vfx
+from moviepy import AudioFileClip, ColorClip, ImageClip, CompositeVideoClip, TextClip, concatenate_videoclips,vfx
 from openai import OpenAI
 import requests
+from openai.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
+from openai.types.shared_params import ResponseFormatJSONObject
 
-from app import audio, prompt, video
-from app.comfyui_tool import ComfyUITool
+from app.core.comfyui_tool import ComfyUITool
 
 load_dotenv()
 
 class TopicGenerator:
-    DRAW_PROMPT_TEMPLATE = '''
-Black stick figure, pure white background, vector graphic, icon design, illustration, minimalist, simple, 
-    '''
-    PROMPT = '''
-# 角色
-你是一位杰出的心理学文案大师，尤其擅长短视频文案创作。能根据用户给出的材料进行拓展，创作出每句话都极具吸引力、反差感强烈的文案，且文案前三秒必须有能抓住人心的钩子。同时，你还能针对文案中的每一句话，创作出与之对应的使用的图片描述词，描述词需要有统一的风格(铅笔画，水彩画，动漫风...，等中只选一种用于所有分镜)，不少于30字
-
-## 技能
-### 技能1:创作心理学短视频文案
-1. 当用户提供材料后，确定文案主题，然后构思一个具有强烈反差感且吸引人的钩子作为文案开头。
-2. 围绕主题展开，通过先举出反例再进行正面解释的方式创作文案，一句话不超过50字，要有深度。
-
-### 技能2:编写图片描述词
-1. 针对文案中的每句话，创作对应的图片描述词(分中文版和英文版)
-2. 图片描述词要突出当前句子对应的重点人物姿势或物品，且描述词不得低于30字。
-
-## 限制
-- 只围绕用户提供的材料进行文案主题确定、内容创作及图片描述词编写，拒绝回答与主题无关的话题。
-- 文案必须按照先举反例再正面解释，一句话不超过50字求创作图片描述词需符合规定格式。
-- 确保文案和图片描述词内容符合短视频风格需求。
-
-EXAMPLE JSON OUTPUT:
-{
-    "response": [
-        {
-            "id": "1",
-            "text": "xxx",
-            "prompt_zh": "xxxxx",
-            "prompt_en": "xxxxx",
-        }
-    ]
-}
-'''
-
-    def __init__(self, topic :str,cailiao:str):
-        self.topic = topic
-        self.cailiao = cailiao
+    def __init__(self, input_topic :str,cai_liao:str, draw_prompt_template: str = "", prompt_content: str = ""):
+        self.topic = input_topic
+        self.cai_liao = cai_liao
+        self.draw_prompt_template = draw_prompt_template if draw_prompt_template else ""
+        self.prompt_content = prompt_content if prompt_content else ""
         self.api_key = "sk-8b69f82630e14ea49260202ed152572b"
         self.base_url="https://api.deepseek.com"
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         # 初始化ComfyUITool
         url = os.getenv("COMFYUI_API_URL")
         workflow_file = 'data/nunchaku-turbo-dev.json'
-        workflow_seed = 162434675638754  # workflowfile开头总的seed
+        workflow_seed = 162434675638754
         output_dir = 'output'
         self.comfyui_tool = ComfyUITool(url, workflow_seed, workflow_file, output_dir)
 
     def _create_image(self, prompt: str):
         """用AI生成画面"""
-        image = self.comfyui_tool.generate_clip(self.DRAW_PROMPT_TEMPLATE + prompt)
+        image = self.comfyui_tool.generate_clip(self.draw_prompt_template + prompt)
         return image[0]
     
     def generate_images(self):
@@ -102,7 +71,8 @@ EXAMPLE JSON OUTPUT:
         self.comfyui_tool.free()
         return True
     
-    def _generate_audio(self, text: str, max_retries=3):
+    @staticmethod
+    def _generate_audio(text: str, max_retries=3):
         url = os.getenv("AUDIO_API_URL")
         api_key = os.getenv("AUDIO_API_KEY")
         model = os.getenv("AUDIO_MODEL")
@@ -204,12 +174,13 @@ EXAMPLE JSON OUTPUT:
         main_clip = concatenate_videoclips(slided_clips)
         # main_audio_clip = concatenate_audioclips(audio_clips)
         backgroud.with_duration(main_clip.duration)
-        title_clip = TextClip(margin=(10,10),text=f"{self.topic}", duration=main_clip.duration, font="data/STKAITI.TTF", font_size=60, color='white', method='label', text_align='center', stroke_color='black', stroke_width=2)
-        final_clip = CompositeVideoClip([backgroud, main_clip.with_position(('center', 'center')), title_clip.with_position(('center', 'top'))])
+        # title_clip = TextClip(margin=(10,10),text=f"{self.topic}", duration=main_clip.duration, font="data/STKAITI.TTF", font_size=60, color='white', method='label', text_align='center', stroke_color='black', stroke_width=2)
+        # , title_clip.with_position(('center', 'top'))
+        final_clip = CompositeVideoClip([backgroud, main_clip.with_position(('center', 'center'))])
         final_clip.duration = main_clip.duration
         # final_clip = final_clip.with_audio(main_audio_clip)
         final_clip.write_videofile(video_path, fps=30, threads=4, codec="h264_nvenc")
-        final_clip.preview()
+        # final_clip.preview()
         return True
 
     def run_work(self):
@@ -250,21 +221,19 @@ EXAMPLE JSON OUTPUT:
                 response = self.client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[
-                        {"role": "system", "content": self.PROMPT},
-                        {"role": "user", "content": self.cailiao},
+                        ChatCompletionSystemMessageParam(content=self.prompt_content,role="system"),
+                        ChatCompletionUserMessageParam(content=self.cai_liao,role="user"),
                     ],
-                    response_format={
-                        'type': 'json_object'
-                    }
+                    response_format=ResponseFormatJSONObject(type="json_object")
                 )
 
                 content = response.choices[0].message.content
                 print(content)
                 try:
-                    result = json.loads(content)["response"]
-                    if result and isinstance(result, list) and len(result) > 0:
+                    resp = json.loads(content)["response"]
+                    if resp and isinstance(resp, list) and len(resp) > 0:
                         with open(json_path,'w',encoding='utf-8') as f:
-                            f.write(json.dumps(result,ensure_ascii=False,indent=2))
+                            f.write(json.dumps(resp, ensure_ascii=False, indent=2))
                         return True
                     else:
                         print(f"API返回空结果，第{attempt+1}次尝试")
@@ -289,6 +258,6 @@ EXAMPLE JSON OUTPUT:
 
 if __name__ == "__main__":
     topic = "如何提升自信心"
-    generator = TopicGenerator(topic)
+    generator = TopicGenerator(topic, "一些材料")
     result = generator.generate_topic_json()
     print(result)
